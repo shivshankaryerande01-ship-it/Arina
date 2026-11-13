@@ -1,13 +1,17 @@
+
 name: Build Tractor Manager APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout
@@ -19,17 +23,44 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Extract project ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ZIP file not found"
+            exit 1
+          fi
+          mkdir extracted
+          unzip -q "$ZIP_FILE" -d extracted
 
       - name: Build APK
         run: |
-          gradle --version
-          gradle :app:assembleDebug
+          PROJECT_DIR=$(find extracted -name settings.gradle.kts -printf '%h\n' | head -n 1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Android project not found"
+            exit 1
+          fi
+          gradle -p "$PROJECT_DIR" :app:assembleDebug
+
+      - name: Prepare APK
+        run: |
+          mkdir -p output
+          APK=$(find extracted -path "*/app/build/outputs/apk/debug/*.apk" | head -n 1)
+          test -n "$APK"
+          cp "$APK" output/Tractor-Manager.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Tractor-Manager-APK
-          path: app/build/outputs/apk/debug/*.apk
-          
+          path: output/Tractor-Manager.apk
